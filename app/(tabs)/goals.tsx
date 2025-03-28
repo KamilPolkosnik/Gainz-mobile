@@ -1,5 +1,15 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ImageBackground, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  ImageBackground,
+  ActivityIndicator,
+  ScrollView,
+  TextInput,
+} from 'react-native';
 import { Plus, Target, ArrowLeft, Trash2, CreditCard as Edit } from 'lucide-react-native';
 import { useGoalStore } from '@/stores/goals';
 import { Modal } from '@/components/Modal';
@@ -20,127 +30,170 @@ export default function GoalsScreen() {
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+
   const { goals, addGoal, updateGoal, editGoal, deleteGoal, getGoal, checkDeadlines } = useGoalStore();
 
+  // -------------------------------
+  // STAN I LOGIKA WYSZUKIWANIA (filtrowanie po tytule)
+  // -------------------------------
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Przefiltrowana lista wszystkich celów
+  const filteredGoals = useMemo(() => {
+    // Jeżeli brak wpisu w polu wyszukiwania, zwracamy wszystkie cele
+    if (!searchQuery) return goals;
+
+    // W przeciwnym razie – tylko cele zawierające w tytule fragment wpisany przez użytkownika
+    return goals.filter((goal) =>
+      goal.title.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [goals, searchQuery]);
+
+  // -------------------------------
+  // ROZDZIELENIE NA AKTYWNE / UKOŃCZONE
+  // -------------------------------
+  const allActiveGoals = useMemo(() => filteredGoals.filter((g) => !g.completed), [filteredGoals]);
+  const allCompletedGoals = useMemo(() => filteredGoals.filter((g) => g.completed), [filteredGoals]);
+
+  // -------------------------------
+  // PAGINACJA
+  // -------------------------------
   const [visibleActiveGoals, setVisibleActiveGoals] = useState<typeof goals>([]);
   const [visibleCompletedGoals, setVisibleCompletedGoals] = useState<typeof goals>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   const activeListRef = useRef<FlatList>(null);
   const completedListRef = useRef<FlatList>(null);
 
-  // Check deadlines when the component mounts or becomes active
-  React.useEffect(() => {
+  // Sprawdzaj terminy przy starcie i co minutę (funkcja istniała w Twoim kodzie)
+  useEffect(() => {
     checkDeadlines();
-    const interval = setInterval(checkDeadlines, 60000); // Check every minute
+    const interval = setInterval(checkDeadlines, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [checkDeadlines]);
 
-  const activeGoals = goals.filter(g => !g.completed);
-  const completedGoals = goals.filter(g => g.completed);
-
-  // Reset visible goals and scroll position when screen comes into focus
+  // Po wejściu w ekran i przy zmianie tabów – reset wyświetlanych celów i scroll na górę
   useFocusEffect(
     useCallback(() => {
       if (activeTab === 'active') {
-        setVisibleActiveGoals(activeGoals.slice(0, ITEMS_PER_PAGE));
+        setVisibleActiveGoals(allActiveGoals.slice(0, ITEMS_PER_PAGE));
         setTimeout(() => {
           activeListRef.current?.scrollToOffset({ offset: 0, animated: false });
         }, 0);
       } else {
-        setVisibleCompletedGoals(completedGoals.slice(0, ITEMS_PER_PAGE));
+        setVisibleCompletedGoals(allCompletedGoals.slice(0, ITEMS_PER_PAGE));
         setTimeout(() => {
           completedListRef.current?.scrollToOffset({ offset: 0, animated: false });
         }, 0);
       }
-    }, [activeTab, activeGoals.length, completedGoals.length])
+    }, [activeTab, allActiveGoals, allCompletedGoals])
   );
 
-  // Reset visible goals when switching tabs
   useEffect(() => {
     if (activeTab === 'active') {
-      setVisibleActiveGoals(activeGoals.slice(0, ITEMS_PER_PAGE));
+      setVisibleActiveGoals(allActiveGoals.slice(0, ITEMS_PER_PAGE));
       setTimeout(() => {
         activeListRef.current?.scrollToOffset({ offset: 0, animated: false });
       }, 0);
     } else {
-      setVisibleCompletedGoals(completedGoals.slice(0, ITEMS_PER_PAGE));
+      setVisibleCompletedGoals(allCompletedGoals.slice(0, ITEMS_PER_PAGE));
       setTimeout(() => {
         completedListRef.current?.scrollToOffset({ offset: 0, animated: false });
       }, 0);
     }
-  }, [activeTab]);
+  }, [activeTab, allActiveGoals, allCompletedGoals]);
 
+  // -------------------------------
+  // DODAWANIE / EDYCJA CELU
+  // -------------------------------
   const handleAddGoal = (data: any) => {
     if (selectedGoalId) {
       editGoal(selectedGoalId, data);
     } else {
       addGoal(data);
-      setVisibleActiveGoals(activeGoals.slice(0, ITEMS_PER_PAGE));
     }
     setShowForm(false);
     setSelectedGoalId(null);
+    // Odśwież listy widoczne
+    setVisibleActiveGoals(allActiveGoals.slice(0, ITEMS_PER_PAGE));
+    setVisibleCompletedGoals(allCompletedGoals.slice(0, ITEMS_PER_PAGE));
   };
 
+  // -------------------------------
+  // AKTUALIZACJA POSTĘPU CELU
+  // -------------------------------
   const handleUpdateProgress = (value: number) => {
     if (selectedGoalId) {
       updateGoal(selectedGoalId, value);
       setShowProgressForm(false);
       setShowDetails(false);
-      // Update visible goals after progress update
-      setVisibleActiveGoals(activeGoals.slice(0, ITEMS_PER_PAGE));
-      setVisibleCompletedGoals(completedGoals.slice(0, ITEMS_PER_PAGE));
+      // Odśwież listy
+      setVisibleActiveGoals(allActiveGoals.slice(0, ITEMS_PER_PAGE));
+      setVisibleCompletedGoals(allCompletedGoals.slice(0, ITEMS_PER_PAGE));
     }
   };
 
+  // -------------------------------
+  // USUWANIE CELU
+  // -------------------------------
   const handleDeleteGoal = () => {
     if (selectedGoalId) {
       deleteGoal(selectedGoalId);
       setShowDeleteConfirmation(false);
       setShowDetails(false);
-      // Update visible goals after deletion
-      setVisibleActiveGoals(activeGoals.slice(0, ITEMS_PER_PAGE));
-      setVisibleCompletedGoals(completedGoals.slice(0, ITEMS_PER_PAGE));
+      setVisibleActiveGoals(allActiveGoals.slice(0, ITEMS_PER_PAGE));
+      setVisibleCompletedGoals(allCompletedGoals.slice(0, ITEMS_PER_PAGE));
     }
   };
 
+  // -------------------------------
+  // ŁADOWANIE KOLEJNYCH STRON
+  // -------------------------------
   const loadMore = useCallback(async () => {
     if (isLoadingMore) return;
 
-    const currentGoals = activeTab === 'active' ? activeGoals : completedGoals;
+    const currentGoals = activeTab === 'active' ? allActiveGoals : allCompletedGoals;
     const visibleGoals = activeTab === 'active' ? visibleActiveGoals : visibleCompletedGoals;
 
     if (visibleGoals.length >= currentGoals.length) return;
 
     setIsLoadingMore(true);
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
+    // Symulacja opóźnienia
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     const nextGoals = currentGoals.slice(0, visibleGoals.length + ITEMS_PER_PAGE);
-    
+
     if (activeTab === 'active') {
       setVisibleActiveGoals(nextGoals);
     } else {
       setVisibleCompletedGoals(nextGoals);
     }
-    
-    setIsLoadingMore(false);
-  }, [isLoadingMore, activeTab, activeGoals, completedGoals, visibleActiveGoals, visibleCompletedGoals]);
 
+    setIsLoadingMore(false);
+  }, [isLoadingMore, activeTab, allActiveGoals, allCompletedGoals, visibleActiveGoals, visibleCompletedGoals]);
+
+  // -------------------------------
+  // FORMATOWANIE DATY (zachowane do wyświetlania w UI)
+  // -------------------------------
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'long', 
+    const options: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'long',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     };
     return date.toLocaleDateString('pl-PL', options);
   };
 
+  // -------------------------------
+  // RENDEROWANIE POJEDYNCZEGO CELU
+  // -------------------------------
   const renderGoal = ({ item: goal }: { item: any }) => {
-    const daysLeft = Math.ceil((new Date(goal.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    const daysLeft = Math.ceil(
+      (new Date(goal.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+    );
     const isDeadlinePassed = daysLeft <= 0;
 
     return (
@@ -153,22 +206,28 @@ export default function GoalsScreen() {
           }}
         >
           <View style={styles.goalHeader}>
-            <View style={[
-              styles.goalIcon,
-              goal.failed && styles.goalIconFailed,
-              goal.completed && !goal.failed && styles.goalIconCompleted
-            ]}>
-              <Target size={24} color={
-                goal.failed ? colors.common.error :
-                goal.completed ? colors.common.success :
-                colors.goals.primary
-              } strokeWidth={2} />
+            <View
+              style={[
+                styles.goalIcon,
+                goal.failed && styles.goalIconFailed,
+                goal.completed && !goal.failed && styles.goalIconCompleted,
+              ]}
+            >
+              <Target
+                size={24}
+                color={
+                  goal.failed
+                    ? colors.common.error
+                    : goal.completed
+                    ? colors.common.success
+                    : colors.goals.primary
+                }
+                strokeWidth={2}
+              />
             </View>
             <View style={styles.goalInfo}>
               <Text style={styles.goalTitle}>{goal.title}</Text>
-              {goal.description && (
-                <Text style={styles.goalDescription}>{goal.description}</Text>
-              )}
+              {goal.description && <Text style={styles.goalDescription}>{goal.description}</Text>}
             </View>
           </View>
 
@@ -185,24 +244,21 @@ export default function GoalsScreen() {
 
           <View style={styles.deadline}>
             {goal.completed ? (
-              <Text style={[
-                styles.deadlineText,
-                goal.failed ? styles.failedText : styles.completedText
-              ]}>
-                {goal.failed ? 
-                  'Cel nie został osiągnięty w wyznaczonym czasie' :
-                  'Cel osiągnięty!'
-                }
+              <Text
+                style={[
+                  styles.deadlineText,
+                  goal.failed ? styles.failedText : styles.completedText,
+                ]}
+              >
+                {goal.failed
+                  ? 'Cel nie został osiągnięty w wyznaczonym czasie'
+                  : 'Cel osiągnięty!'}
               </Text>
             ) : (
-              <Text style={[
-                styles.deadlineText,
-                isDeadlinePassed && styles.deadlinePassedText
-              ]}>
+              <Text style={[styles.deadlineText, isDeadlinePassed && styles.deadlinePassedText]}>
                 {isDeadlinePassed
                   ? `Termin minął ${Math.abs(daysLeft)} dni temu`
-                  : `Pozostało ${daysLeft} dni (do ${formatDate(goal.deadline)})`
-                }
+                  : `Pozostało ${daysLeft} dni (do ${formatDate(goal.deadline)})`}
               </Text>
             )}
           </View>
@@ -211,9 +267,9 @@ export default function GoalsScreen() {
     );
   };
 
+  // Stopka listy
   const renderFooter = () => {
     if (!isLoadingMore) return null;
-
     return (
       <View style={styles.loadingFooter}>
         <ActivityIndicator color={colors.goals.primary} />
@@ -222,30 +278,49 @@ export default function GoalsScreen() {
     );
   };
 
+  // Wybrany cel (do edycji / szczegółów)
   const selectedGoal = selectedGoalId ? getGoal(selectedGoalId) : null;
 
   return (
     <ImageBackground
-      source={{ uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop' }}
+      source={{
+        uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop',
+      }}
       style={styles.background}
     >
       <LinearGradient
         colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0.95)']}
         style={styles.container}
       >
+        {/* Nagłówek */}
         <View style={styles.header}>
           <Text style={styles.title}>Cele</Text>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => {
-              setSelectedGoalId(null);
-              setShowForm(true);
-            }}
-          >
-            <Plus size={24} color="#fff" strokeWidth={2} />
-          </TouchableOpacity>
+
+          {/* Pola wyszukiwarki i przycisk dodawania */}
+          <View style={styles.searchAndAddWrapper}>
+            {/* Wyszukiwarka */}
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Wyszukaj..."
+              placeholderTextColor={colors.text.secondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+
+            {/* Przycisk dodawania nowego celu */}
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => {
+                setSelectedGoalId(null);
+                setShowForm(true);
+              }}
+            >
+              <Plus size={24} color="#fff" strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
         </View>
 
+        {/* Taby */}
         <View style={styles.tabs}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'active' && styles.activeTab]}
@@ -265,6 +340,7 @@ export default function GoalsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Lista celów */}
         <FlatList
           ref={activeTab === 'active' ? activeListRef : completedListRef}
           data={activeTab === 'active' ? visibleActiveGoals : visibleCompletedGoals}
@@ -300,6 +376,7 @@ export default function GoalsScreen() {
           }
         />
 
+        {/* Modal – Formularz nowego / edycji celu */}
         <Modal visible={showForm} onClose={() => setShowForm(false)}>
           <GoalForm
             onClose={() => setShowForm(false)}
@@ -308,6 +385,7 @@ export default function GoalsScreen() {
           />
         </Modal>
 
+        {/* Modal – Szczegóły celu */}
         <Modal visible={showDetails} onClose={() => setShowDetails(false)}>
           {selectedGoal && (
             <View style={styles.detailsContainer}>
@@ -358,17 +436,17 @@ export default function GoalsScreen() {
                   </View>
                   <View style={styles.detailsRow}>
                     <Text style={styles.detailsLabel}>Termin</Text>
-                    <Text style={styles.detailsValue}>
-                      {formatDate(selectedGoal.deadline)}
-                    </Text>
+                    <Text style={styles.detailsValue}>{formatDate(selectedGoal.deadline)}</Text>
                   </View>
                   {selectedGoal.completed && (
                     <View style={styles.detailsRow}>
                       <Text style={styles.detailsLabel}>Status</Text>
-                      <Text style={[
-                        styles.detailsValue,
-                        selectedGoal.failed ? styles.failedText : styles.completedText
-                      ]}>
+                      <Text
+                        style={[
+                          styles.detailsValue,
+                          selectedGoal.failed ? styles.failedText : styles.completedText,
+                        ]}
+                      >
                         {selectedGoal.failed ? 'Nie osiągnięty' : 'Osiągnięty'}
                       </Text>
                     </View>
@@ -382,9 +460,7 @@ export default function GoalsScreen() {
                       <Text style={styles.historyValue}>
                         {entry.value} {selectedGoal.unit}
                       </Text>
-                      <Text style={styles.historyDate}>
-                        {formatDate(entry.date)}
-                      </Text>
+                      <Text style={styles.historyDate}>{formatDate(entry.date)}</Text>
                     </View>
                   ))}
                 </View>
@@ -402,6 +478,7 @@ export default function GoalsScreen() {
           )}
         </Modal>
 
+        {/* Modal – Formularz aktualizacji postępu */}
         <Modal visible={showProgressForm} onClose={() => setShowProgressForm(false)}>
           {selectedGoal && (
             <GoalProgressForm
@@ -412,6 +489,7 @@ export default function GoalsScreen() {
           )}
         </Modal>
 
+        {/* Dialog potwierdzenia usunięcia */}
         <ConfirmationDialog
           visible={showDeleteConfirmation}
           onClose={() => setShowDeleteConfirmation(false)}
@@ -419,8 +497,8 @@ export default function GoalsScreen() {
           title="Usuń cel"
           message={
             selectedGoal?.completed
-              ? "Czy na pewno chcesz usunąć ten ukończony cel? Tej operacji nie można cofnąć."
-              : "Czy na pewno chcesz usunąć ten cel? Tej operacji nie można cofnąć."
+              ? 'Czy na pewno chcesz usunąć ten ukończony cel? Tej operacji nie można cofnąć.'
+              : 'Czy na pewno chcesz usunąć ten cel? Tej operacji nie można cofnąć.'
           }
         />
       </LinearGradient>
@@ -438,6 +516,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    // Tytuł i obszar wyszukiwania + plus obok
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 20,
@@ -447,6 +526,22 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: 'Roboto-Bold',
     color: colors.goals.primary,
+  },
+  searchAndAddWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // Możesz tu dodać styl dla lepszego rozkładu
+  },
+  searchInput: {
+    width: 180,
+    height: 48,
+    paddingHorizontal: 12,
+    marginRight: 12,
+    borderRadius: 8,
+    backgroundColor: colors.common.background,
+    fontFamily: 'Roboto-Regular',
+    fontSize: 14,
+    color: colors.text.primary,
   },
   addButton: {
     width: 48,
@@ -516,10 +611,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   goalIconFailed: {
-    backgroundColor: '#ffebee',
+    backgroundColor: '#ffebee', // czerwonawe tło
   },
   goalIconCompleted: {
-    backgroundColor: '#e8f5e9',
+    backgroundColor: '#e8f5e9', // zielonkawe tło
   },
   goalInfo: {
     flex: 1,

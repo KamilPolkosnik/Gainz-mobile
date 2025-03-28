@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ImageBackground, ActivityIndicator } from 'react-native';
 import { Plus, Dumbbell, Calendar } from 'lucide-react-native';
 import { useWorkoutStore } from '@/stores/workouts';
@@ -9,6 +9,7 @@ import { colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useFocusEffect } from 'expo-router';
+import CalendarPicker from 'react-native-calendar-picker';
 
 const ITEMS_PER_PAGE = 3;
 
@@ -16,25 +17,84 @@ export default function TrainingScreen() {
   const [showForm, setShowForm] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
+
+  // Obsługa store
   const { workouts, addWorkout, getWorkout, updateWorkout } = useWorkoutStore();
+
+  // Paginacja
   const [visibleWorkouts, setVisibleWorkouts] = useState<typeof workouts>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const listRef = useRef<FlatList>(null);
 
-  // Reset visible workouts and scroll position when screen comes into focus
+  // -------------------------------
+  // STANY ORAZ LOGIKA FILTROWANIA
+  // -------------------------------
+  const [isCalendarVisible, setIsCalendarVisible] = useState(false);
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+
+  // Funkcja do "Ostatniego miesiąca" – od 1. dnia bieżącego miesiąca do dziś
+  const handleFilterLastMonth = useCallback(() => {
+    const now = new Date();
+    const firstDayOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    setStartDate(firstDayOfThisMonth);
+    setEndDate(now);
+  }, []);
+
+  // Obsługa zmian w kalendarzu
+  const handleDateChange = useCallback((date: Date, type: 'START_DATE' | 'END_DATE') => {
+    if (type === 'START_DATE') {
+      setStartDate(date);
+      setEndDate(null);
+    } else {
+      setEndDate(date);
+    }
+  }, []);
+
+  // Filtrowanie
+  const filteredWorkouts = useMemo(() => {
+    // Jeśli nie mamy obu dat, zwracamy wszystkie
+    if (!startDate || !endDate) {
+      return workouts;
+    }
+    // W przeciwnym wypadku tylko z wybranego zakresu
+    return workouts.filter((workout) => {
+      const workoutDate = new Date(workout.date);
+      return workoutDate >= startDate && workoutDate <= endDate;
+    });
+  }, [workouts, startDate, endDate]);
+
+  // Reset widocznych elementów i scroll do góry, gdy ekran znów wchodzi w fokus
   useFocusEffect(
     useCallback(() => {
-      setVisibleWorkouts(workouts.slice(0, ITEMS_PER_PAGE));
-      // Scroll to top with animation
+      setVisibleWorkouts(filteredWorkouts.slice(0, ITEMS_PER_PAGE));
       listRef.current?.scrollToOffset({ offset: 0, animated: true });
-    }, [workouts])
+    }, [filteredWorkouts])
   );
 
+  // Funkcja ładowania kolejnych elementów (paginacja)
+  const loadMore = useCallback(async () => {
+    if (isLoadingMore || visibleWorkouts.length >= filteredWorkouts.length) return;
+
+    setIsLoadingMore(true);
+
+    // Symulujemy niewielkie opóźnienie
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const nextWorkouts = filteredWorkouts.slice(0, visibleWorkouts.length + ITEMS_PER_PAGE);
+    setVisibleWorkouts(nextWorkouts);
+    setIsLoadingMore(false);
+  }, [isLoadingMore, visibleWorkouts, filteredWorkouts]);
+
+  // -------------------------------
+  // DODAWANIE / EDYCJA TRENINGÓW
+  // -------------------------------
   const handleAddWorkout = (data: { date: string; exercises: any[] }) => {
     addWorkout(data);
     setShowForm(false);
-    // Reset visible workouts to show the new one
-    setVisibleWorkouts(workouts.slice(0, ITEMS_PER_PAGE));
+    // Wróć na początek listy, by było widać nowy
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
   const handleEditWorkout = (data: { date: string; exercises: any[] }) => {
@@ -49,30 +109,23 @@ export default function TrainingScreen() {
     setTimeout(() => setShowForm(true), 300);
   };
 
-  const loadMore = useCallback(async () => {
-    if (isLoadingMore || visibleWorkouts.length >= workouts.length) return;
-
-    setIsLoadingMore(true);
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const nextWorkouts = workouts.slice(0, visibleWorkouts.length + ITEMS_PER_PAGE);
-    setVisibleWorkouts(nextWorkouts);
-    setIsLoadingMore(false);
-  }, [isLoadingMore, visibleWorkouts.length, workouts]);
-
+  // -------------------------------
+  // FORMATOWANIE DATY
+  // -------------------------------
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    const options: Intl.DateTimeFormatOptions = { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     };
     return date.toLocaleDateString('pl-PL', options);
   };
 
+  // -------------------------------
+  // RENDER - POJEDYNCZY TRENIG
+  // -------------------------------
   const renderWorkout = ({ item: workout }: { item: any }) => (
     <Animated.View entering={FadeIn.delay(200)}>
       <TouchableOpacity
@@ -87,9 +140,7 @@ export default function TrainingScreen() {
             <Dumbbell size={24} color={colors.training.primary} strokeWidth={2} />
           </View>
           <View style={styles.workoutInfo}>
-            <Text style={styles.workoutDate}>
-              {formatDate(workout.date)}
-            </Text>
+            <Text style={styles.workoutDate}>{formatDate(workout.date)}</Text>
             <Text style={styles.workoutExercises}>
               {workout.exercises.length} {workout.exercises.length === 1 ? 'ćwiczenie' : 'ćwiczeń'}
             </Text>
@@ -101,7 +152,7 @@ export default function TrainingScreen() {
             <View key={exercise.id} style={styles.exerciseItem}>
               <Text style={styles.exerciseName}>{exercise.name}</Text>
               <View style={styles.setsList}>
-                {exercise.sets.map((set: any, index: number) => (
+                {exercise.sets.map((set: any) => (
                   <View key={set.id} style={styles.setItem}>
                     <Text style={styles.setText}>
                       {set.reps && `${set.reps} powt.`}
@@ -119,9 +170,9 @@ export default function TrainingScreen() {
     </Animated.View>
   );
 
+  // Stopka listy (loading kolejnych elementów)
   const renderFooter = () => {
     if (!isLoadingMore) return null;
-
     return (
       <View style={styles.loadingFooter}>
         <ActivityIndicator color={colors.training.primary} />
@@ -134,26 +185,42 @@ export default function TrainingScreen() {
 
   return (
     <ImageBackground
-      source={{ uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop' }}
+      source={{
+        uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop',
+      }}
       style={styles.background}
     >
       <LinearGradient
         colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0.95)']}
         style={styles.container}
       >
+        {/* Nagłówek */}
         <View style={styles.header}>
           <Text style={styles.title}>Treningi</Text>
+
+          {/* Kontener z 2 przyciskami: dodawanie i otwieranie kalendarza */}
+          <View style={styles.buttonsWrapper}>
           <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => {
-              setSelectedWorkoutId(null);
-              setShowForm(true);
-            }}
-          >
-            <Plus size={24} color="#fff" strokeWidth={2} />
-          </TouchableOpacity>
+              style={styles.addButton}
+              onPress={() => setIsCalendarVisible(true)}
+            >
+              <Calendar size={24} color="#fff" strokeWidth={2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => {
+                setSelectedWorkoutId(null);
+                setShowForm(true);
+              }}
+            >
+              <Plus size={24} color="#fff" strokeWidth={2} />
+            </TouchableOpacity>
+
+
+          </View>
         </View>
 
+        {/* Lista treningów (przefiltrowana + paginacja) */}
         <FlatList
           ref={listRef}
           data={visibleWorkouts}
@@ -166,9 +233,7 @@ export default function TrainingScreen() {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Calendar size={48} color={colors.training.primary} strokeWidth={1.5} />
-              <Text style={styles.emptyStateTitle}>
-                Brak treningów
-              </Text>
+              <Text style={styles.emptyStateTitle}>Brak treningów</Text>
               <Text style={styles.emptyStateText}>
                 Dodaj swój pierwszy trening, aby rozpocząć śledzenie postępów
               </Text>
@@ -185,23 +250,80 @@ export default function TrainingScreen() {
           }
         />
 
+        {/* Modal - Formularz (dodawanie/edycja treningu) */}
         <Modal visible={showForm} onClose={() => setShowForm(false)}>
-          <WorkoutForm 
-            onClose={() => setShowForm(false)} 
+          <WorkoutForm
+            onClose={() => setShowForm(false)}
             onSubmit={selectedWorkoutId ? handleEditWorkout : handleAddWorkout}
-            initialData={selectedWorkout ? {
-              date: selectedWorkout.date,
-              exercises: selectedWorkout.exercises,
-            } : undefined}
+            initialData={
+              selectedWorkout
+                ? {
+                    date: selectedWorkout.date,
+                    exercises: selectedWorkout.exercises,
+                  }
+                : undefined
+            }
           />
         </Modal>
 
+        {/* Modal - Szczegóły treningu */}
         <Modal visible={showDetails} onClose={() => setShowDetails(false)}>
           <WorkoutDetails
             workoutId={selectedWorkoutId}
             onClose={() => setShowDetails(false)}
             onEdit={handleStartEdit}
           />
+        </Modal>
+
+        {/* Modal - Kalendarz do filtrowania */}
+        <Modal visible={isCalendarVisible} onClose={() => setIsCalendarVisible(false)}>
+          <View style={{ padding: 20 }}>
+            <Text style={{ fontSize: 18, fontFamily: 'Roboto-Bold', marginBottom: 20 }}>
+              Wybierz zakres dat:
+            </Text>
+            <CalendarPicker
+              allowRangeSelection
+              onDateChange={handleDateChange}
+              selectedStartDate={startDate}
+              selectedEndDate={endDate}
+              weekdays={['Ndz', 'Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob']}
+              months={[
+                'Styczeń',
+                'Luty',
+                'Marzec',
+                'Kwiecień',
+                'Maj',
+                'Czerwiec',
+                'Lipiec',
+                'Sierpień',
+                'Wrzesień',
+                'Październik',
+                'Listopad',
+                'Grudzień',
+              ]}
+              previousTitle="Poprzedni"
+              nextTitle="Następny"
+              todayBackgroundColor={colors.training.light}
+              selectedDayColor={colors.training.primary}
+              selectedDayTextColor="#FFFFFF"
+            />
+
+            {/* Przycisk - "Ostatni miesiąc" */}
+            <TouchableOpacity
+              style={[styles.emptyStateButton, { marginTop: 20 }]}
+              onPress={handleFilterLastMonth}
+            >
+              <Text style={styles.emptyStateButtonText}>Ostatni miesiąc</Text>
+            </TouchableOpacity>
+
+            {/* Przycisk - zamknij modal */}
+            <TouchableOpacity
+              style={[styles.emptyStateButton, { marginTop: 10 }]}
+              onPress={() => setIsCalendarVisible(false)}
+            >
+              <Text style={styles.emptyStateButtonText}>Zamknij</Text>
+            </TouchableOpacity>
+          </View>
         </Modal>
       </LinearGradient>
     </ImageBackground>
@@ -218,6 +340,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    // Rozdzielenie tytułu i przycisków
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 20,
@@ -228,6 +351,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto-Bold',
     color: colors.training.primary,
   },
+  // Kontener na przyciski (dodawanie i kalendarz)
+  buttonsWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   addButton: {
     width: 48,
     height: 48,
@@ -235,6 +363,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.training.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 12, // odstęp między przyciskami
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
