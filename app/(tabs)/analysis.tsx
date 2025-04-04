@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
   ImageBackground,
   Modal,
-  TextInput, // <-- dodany TextInput do wyszukiwania
+  TextInput,
 } from 'react-native';
 
 import { useMeasurementStore } from '@/stores/measurements';
@@ -16,15 +16,22 @@ import { useWorkoutStore } from '@/stores/workouts';
 import {
   Scale,
   Dumbbell,
-  Calendar,
+  Calendar as CalendarIcon,
   ChevronDown,
 } from 'lucide-react-native';
 import CalendarPicker from 'react-native-calendar-picker';
 import { colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
-import { LineChart } from 'react-native-chart-kit';
+import { LineChart, BarChart } from 'react-native-chart-kit';
 
-type AnalysisType = 'measurements' | 'exercises';
+/** 
+ * Typy dla kategorii analizy
+ *  'general'    -> Ogólne (BarChart z liczbą treningów w miesiącach wybranego roku)
+ *  'measurements' -> Pomiary
+ *  'exercises' -> Ćwiczenia
+ */
+type AnalysisType = 'general' | 'measurements' | 'exercises';
+
 type MeasurementType =
   | 'weight'
   | 'shoulders'
@@ -35,8 +42,10 @@ type MeasurementType =
   | 'waist'
   | 'thigh'
   | 'calf';
+
 type ExerciseMetric = 'weight' | 'reps' | 'distance' | 'time';
 
+// Nazwy i jednostki dla pomiarów
 const measurementLabels: Record<MeasurementType, string> = {
   weight: 'Waga',
   shoulders: 'Barki',
@@ -61,6 +70,7 @@ const measurementUnits: Record<MeasurementType, string> = {
   calf: 'cm',
 };
 
+// Nazwy i jednostki dla ćwiczeń
 const exerciseMetricLabels: Record<ExerciseMetric, string> = {
   weight: 'Ciężar',
   reps: 'Powtórzenia',
@@ -75,83 +85,102 @@ const exerciseMetricUnits: Record<ExerciseMetric, string> = {
   time: 'min',
 };
 
+// Nazwy miesięcy do wyświetlania w tabeli
+const monthNames = [
+  'Styczeń',
+  'Luty',
+  'Marzec',
+  'Kwiecień',
+  'Maj',
+  'Czerwiec',
+  'Lipiec',
+  'Sierpień',
+  'Wrzesień',
+  'Październik',
+  'Listopad',
+  'Grudzień',
+];
+
+/**
+ * Funkcja tworząca tablicę stringów ["01", "02", ..., "12"] – 
+ * używana jako etykiety słupków wykresu w sekcji "Ogólne".
+ */
+function getMonthLabelsAsNumbers() {
+  const arr: string[] = [];
+  for (let i = 1; i <= 12; i++) {
+    arr.push(i.toString().padStart(2, '0')); // "01", "02", ... "12"
+  }
+  return arr;
+}
+
 export default function AnalysisScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = screenWidth - 40;
   const chartHeight = 220;
 
-  // Zakładka
-  const [analysisType, setAnalysisType] = useState<AnalysisType>('measurements');
+  // Kategoria w analizie
+  const [analysisType, setAnalysisType] = useState<AnalysisType>('general');
 
-  // ----------------------------------
-  // Stan do kalendarza (daty)
-  // ----------------------------------
+  // Daty (kalendarz) – TYLKO w Pomiary/Ćwiczenia
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
 
-  // ----------------------------------
-  // Stan do modala wyboru pomiarów
-  // ----------------------------------
+  // Wybór pomiaru
   const [showMeasurementModal, setShowMeasurementModal] = useState(false);
   const [selectedMeasurement, setSelectedMeasurement] =
     useState<MeasurementType>('weight');
 
-  // ----------------------------------
-  // Stan do modala wyboru ćwiczenia
-  // ----------------------------------
+  // Wybór ćwiczenia
   const [showExerciseModal, setShowExerciseModal] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState<string>('');
-
-  // Dodane: stan do wyszukiwania ćwiczenia w modalu
   const [searchExerciseQuery, setSearchExerciseQuery] = useState('');
 
-  // ----------------------------------
-  // Stan do modala wyboru metryki (dla ćwiczenia)
-  // ----------------------------------
+  // Wybór metryki ćwiczeń
   const [showExerciseMetricModal, setShowExerciseMetricModal] = useState(false);
   const [selectedExerciseMetric, setSelectedExerciseMetric] =
     useState<ExerciseMetric>('weight');
 
-  // Sklepy
+  // Pobieramy dane ze store
   const { measurements } = useMeasurementStore();
   const { workouts } = useWorkoutStore();
 
-  // Lista ćwiczeń
+  // Unikalne nazwy ćwiczeń
   const exercises = useMemo(() => {
     return Array.from(
       new Set(workouts.flatMap((w) => w.exercises.map((e) => e.name)))
     );
   }, [workouts]);
 
-  // Filtrowana lista ćwiczeń wg searchExerciseQuery
+  // Filtr wyszukiwania
   const filteredExercises = useMemo(() => {
     const q = searchExerciseQuery.toLowerCase();
-    return exercises.filter((name) =>
-      name.toLowerCase().includes(q)
-    );
+    return exercises.filter((name) => name.toLowerCase().includes(q));
   }, [exercises, searchExerciseQuery]);
 
-  // Dostępne metryki (ciężar, rep, dystans, czas)
+  // Metryki
   const exerciseMetrics: ExerciseMetric[] = ['weight', 'reps', 'distance', 'time'];
 
-  // Obsługa zakresu dat
+  // Kalendarz – obsługa
   const handleDateChange = (date: Date, type: 'START_DATE' | 'END_DATE') => {
-    if (type === 'START_DATE') {
-      setStartDate(date);
-      if (endDate && date > endDate) {
-        setEndDate(date);
-      }
-    } else {
-      setEndDate(date);
-      if (!startDate) {
+    if (analysisType === 'measurements' || analysisType === 'exercises') {
+      if (type === 'START_DATE') {
         setStartDate(date);
+        if (endDate && date > endDate) {
+          setEndDate(date);
+        }
+      } else {
+        setEndDate(date);
+        if (!startDate) {
+          setStartDate(date);
+        }
       }
     }
   };
 
-  // Format dat
-  const formatShortDate = (date: Date) => `${date.getDate()}.${date.getMonth() + 1}`;
+  // Formatowanie dat
+  const formatShortDate = (date: Date) =>
+    `${date.getDate()}.${date.getMonth() + 1}`;
   const formatFullDate = (dateInput: Date | null) =>
     dateInput
       ? new Date(dateInput).toLocaleDateString('pl-PL', {
@@ -161,7 +190,25 @@ export default function AnalysisScreen() {
         })
       : '';
 
-  // Pobieranie danych POMIARÓW
+  // ============================================
+  // DOSTĘPNE LATA w "Ogólne" (z workouts)
+  // ============================================
+  const availableYears = useMemo(() => {
+    const yearsSet = new Set<number>();
+    workouts.forEach((w) => {
+      const y = new Date(w.date).getFullYear();
+      yearsSet.add(y);
+    });
+    return Array.from(yearsSet).sort((a, b) => a - b);
+  }, [workouts]);
+
+  // Wybrany rok
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [showYearModal, setShowYearModal] = useState(false);
+
+  // ======================================
+  // POBIERANIE DANYCH - POMIARY
+  // ======================================
   const getMeasurementData = (type: MeasurementType) => {
     let data = measurements
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
@@ -169,7 +216,8 @@ export default function AnalysisScreen() {
         date: new Date(m.date),
         value: m[type],
       }));
-    if (startDate && endDate) {
+    // Tylko "pomiary" używają startDate/endDate
+    if (analysisType === 'measurements' && startDate && endDate) {
       const endDatePlusOne = new Date(endDate);
       endDatePlusOne.setDate(endDatePlusOne.getDate() + 1);
       data = data.filter((d) => d.date >= startDate && d.date < endDatePlusOne);
@@ -177,7 +225,9 @@ export default function AnalysisScreen() {
     return data;
   };
 
-  // Pobieranie danych ĆWICZENIA
+  // ======================================
+  // POBIERANIE DANYCH - ĆWICZENIA
+  // ======================================
   const getExerciseData = (exerciseName: string, metric: ExerciseMetric) => {
     let data = workouts
       .filter((w) => w.exercises.some((e) => e.name === exerciseName))
@@ -196,13 +246,15 @@ export default function AnalysisScreen() {
             value = Math.max(...exercise.sets.map((s) => s.distance || 0));
             break;
           case 'time':
+            // sekundy -> minuty
             value = Math.max(...exercise.sets.map((s) => (s.time || 0) / 60));
             break;
         }
         return { date: new Date(w.date), value };
       });
 
-    if (startDate && endDate) {
+    // Tylko "exercises" używają startDate/endDate
+    if (analysisType === 'exercises' && startDate && endDate) {
       const endDatePlusOne = new Date(endDate);
       endDatePlusOne.setDate(endDatePlusOne.getDate() + 1);
       data = data.filter((d) => d.date >= startDate && d.date < endDatePlusOne);
@@ -210,28 +262,24 @@ export default function AnalysisScreen() {
     return data;
   };
 
-  // Tabelka z danymi
-  const renderDataTable = (
-    data: { date: Date; value: number }[],
-    unit: string
-  ) => {
-    if (!data || data.length === 0) return null;
-    return (
-      <View style={styles.dataContainer}>
-        <Text style={styles.dataTitle}>Szczegóły danych:</Text>
-        {data.map((item, idx) => (
-          <View style={styles.dataRow} key={idx}>
-            <Text style={styles.dataDate}>{formatFullDate(item.date)}</Text>
-            <Text style={styles.dataValue}>
-              {item.value} {unit}
-            </Text>
-          </View>
-        ))}
-      </View>
-    );
+  // ======================================
+  // POBIERANIE DANYCH - OGÓLNE (wybrany rok)
+  // ======================================
+  const getGeneralYearData = (year: number) => {
+    // Tablica 12 elementów (miesiące 0..11)
+    const monthlyCounts = Array(12).fill(0);
+    workouts.forEach((w) => {
+      const d = new Date(w.date);
+      const y = d.getFullYear();
+      const m = d.getMonth(); // 0..11
+      if (y === year) {
+        monthlyCounts[m] += 1;
+      }
+    });
+    return monthlyCounts;
   };
 
-  // Tooltip
+  // ========== TABELA - Tooltip Dla LineChart ==============
   const [tooltipPos, setTooltipPos] = useState({
     x: 0,
     y: 0,
@@ -240,12 +288,11 @@ export default function AnalysisScreen() {
     date: null as Date | null,
   });
 
-  // Rysowanie wykresu
-  const renderChart = (
-    data: { date: Date; value: number }[],
-    unit: string,
-    title: string
-  ) => {
+  // ======================================
+  // RENDER "POMIARY"
+  // ======================================
+  const renderMeasurementSection = () => {
+    const data = getMeasurementData(selectedMeasurement);
     if (!data || data.length === 0) {
       return (
         <View style={styles.emptyState}>
@@ -253,102 +300,113 @@ export default function AnalysisScreen() {
         </View>
       );
     }
+    const label = measurementLabels[selectedMeasurement];
+    const unit = measurementUnits[selectedMeasurement];
+
+    // Etykiety i wartości
     const labels = data.map((d) => formatShortDate(d.date));
     const dataPoints = data.map((d) => d.value);
 
     return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>{title} ({unit})</Text>
-        <LineChart
-          data={{
-            labels,
-            datasets: [{ data: dataPoints }],
-          }}
-          width={chartWidth}
-          height={chartHeight}
-          yAxisSuffix={unit}
-          fromZero={true}
-          withDots={true}
-          withInnerLines={true}
-          withOuterLines={true}
-          withVerticalLabels={true}
-          chartConfig={{
-            backgroundGradientFrom: '#ffffff',
-            backgroundGradientTo: '#ffffff',
-            color: (opacity = 1) => `rgba(13, 110, 253, ${opacity})`,
-            labelColor: (opacity = 1) => `rgba(102, 102, 102, ${opacity})`,
-            decimalPlaces: 0,
-            propsForDots: {
-              r: '5',
-              strokeWidth: '2',
-              stroke: '#fff',
-            },
-          }}
-          bezier
-          style={{
-            borderRadius: 12,
-            marginVertical: 8,
-          }}
-          onDataPointClick={({ index, value, x, y }) => {
-            const clickedDate = data[index].date;
-            const isSamePoint = tooltipPos.x === x && tooltipPos.y === y;
-            if (isSamePoint) {
-              setTooltipPos((prev) => ({
-                ...prev,
-                visible: !prev.visible,
-              }));
-            } else {
-              setTooltipPos({
-                x, y,
-                value,
-                date: clickedDate,
-                visible: true,
-              });
-            }
-          }}
-          decorator={() => {
-            if (tooltipPos.visible && tooltipPos.value != null && tooltipPos.date) {
-              return (
-                <View
-                  style={{
-                    position: 'absolute',
-                    left: tooltipPos.x - 50,
-                    top: tooltipPos.y - 70,
-                    backgroundColor: '#fff',
-                    padding: 8,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: '#ccc',
-                  }}
-                >
-                  <Text style={{ fontFamily: 'Roboto-Medium' }}>
-                    {tooltipPos.value} {unit}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: '#666' }}>
-                    {formatFullDate(tooltipPos.date)}
-                  </Text>
-                </View>
-              );
-            }
-            return null;
-          }}
-        />
-      </View>
-    );
-  };
-
-  // Zakładka Pomiary
-  const renderMeasurementSection = () => {
-    const data = getMeasurementData(selectedMeasurement);
-    return (
       <>
-        {renderChart(data, measurementUnits[selectedMeasurement], measurementLabels[selectedMeasurement])}
-        {renderDataTable(data, measurementUnits[selectedMeasurement])}
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>
+            {label} ({unit})
+          </Text>
+
+          <LineChart
+            data={{
+              labels,
+              datasets: [{ data: dataPoints }],
+            }}
+            width={chartWidth}
+            height={chartHeight}
+            fromZero
+            yAxisSuffix={unit}
+            withDots
+            withInnerLines
+            withOuterLines
+            withVerticalLabels
+            chartConfig={{
+              backgroundGradientFrom: '#ffffff',
+              backgroundGradientTo: '#ffffff',
+              color: (opacity = 1) => `rgba(13, 110, 253, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(102,102,102,${opacity})`,
+              decimalPlaces: 0,
+              propsForDots: {
+                r: '5',
+                strokeWidth: '2',
+                stroke: '#fff',
+              },
+            }}
+            bezier
+            style={{ borderRadius: 12, marginVertical: 8 }}
+            onDataPointClick={({ index, value, x, y }) => {
+              const clickedDate = data[index].date;
+              const isSamePoint = tooltipPos.x === x && tooltipPos.y === y;
+              if (isSamePoint) {
+                setTooltipPos((prev) => ({
+                  ...prev,
+                  visible: !prev.visible,
+                }));
+              } else {
+                setTooltipPos({
+                  x,
+                  y,
+                  value,
+                  date: clickedDate,
+                  visible: true,
+                });
+              }
+            }}
+            decorator={() => {
+              if (tooltipPos.visible && tooltipPos.value !== null && tooltipPos.date) {
+                return (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: tooltipPos.x - 50,
+                      top: tooltipPos.y - 70,
+                      backgroundColor: '#fff',
+                      padding: 8,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#ccc',
+                    }}
+                  >
+                    <Text style={{ fontFamily: 'Roboto-Medium' }}>
+                      {tooltipPos.value} {unit}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#666' }}>
+                      {formatFullDate(tooltipPos.date)}
+                    </Text>
+                  </View>
+                );
+              }
+              return null;
+            }}
+          />
+        </View>
+
+        {/* Tabela z danymi */}
+        <View style={styles.dataContainer}>
+          <Text style={styles.dataTitle}>Szczegóły danych:</Text>
+          {data.map((item, idx) => (
+            <View style={styles.dataRow} key={idx}>
+              <Text style={styles.dataDate}>{formatFullDate(item.date)}</Text>
+              <Text style={styles.dataValue}>
+                {item.value} {unit}
+              </Text>
+            </View>
+          ))}
+        </View>
       </>
     );
   };
 
-  // Zakładka Ćwiczenia
+  // ======================================
+  // RENDER "ĆWICZENIA"
+  // ======================================
   const renderExerciseSection = () => {
     if (!selectedExercise) {
       return (
@@ -362,21 +420,192 @@ export default function AnalysisScreen() {
       );
     }
     const data = getExerciseData(selectedExercise, selectedExerciseMetric);
+    if (!data || data.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateTitle}>Brak danych do wyświetlenia</Text>
+        </View>
+      );
+    }
+
+    const metricLabel = exerciseMetricLabels[selectedExerciseMetric];
+    const metricUnit = exerciseMetricUnits[selectedExerciseMetric];
+    const labels = data.map((d) => formatShortDate(d.date));
+    const dataPoints = data.map((d) => d.value);
+
     return (
       <>
-        {renderChart(
-          data,
-          exerciseMetricUnits[selectedExerciseMetric],
-          `${selectedExercise} – ${exerciseMetricLabels[selectedExerciseMetric]}`
-        )}
-        {renderDataTable(
-          data,
-          exerciseMetricUnits[selectedExerciseMetric]
-        )}
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>
+            {selectedExercise} – {metricLabel} ({metricUnit})
+          </Text>
+
+          <LineChart
+            data={{
+              labels,
+              datasets: [{ data: dataPoints }],
+            }}
+            width={chartWidth}
+            height={chartHeight}
+            fromZero
+            yAxisSuffix={metricUnit}
+            withDots
+            withInnerLines
+            withOuterLines
+            withVerticalLabels
+            chartConfig={{
+              backgroundGradientFrom: '#ffffff',
+              backgroundGradientTo: '#ffffff',
+              color: (opacity = 1) => `rgba(13, 110, 253, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(102,102,102,${opacity})`,
+              decimalPlaces: 0,
+              propsForDots: {
+                r: '5',
+                strokeWidth: '2',
+                stroke: '#fff',
+              },
+            }}
+            bezier
+            style={{ borderRadius: 12, marginVertical: 8 }}
+            onDataPointClick={({ index, value, x, y }) => {
+              const clickedDate = data[index].date;
+              const isSamePoint = tooltipPos.x === x && tooltipPos.y === y;
+              if (isSamePoint) {
+                setTooltipPos((prev) => ({
+                  ...prev,
+                  visible: !prev.visible,
+                }));
+              } else {
+                setTooltipPos({
+                  x,
+                  y,
+                  value,
+                  date: clickedDate,
+                  visible: true,
+                });
+              }
+            }}
+            decorator={() => {
+              if (tooltipPos.visible && tooltipPos.value != null && tooltipPos.date) {
+                return (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: tooltipPos.x - 50,
+                      top: tooltipPos.y - 70,
+                      backgroundColor: '#fff',
+                      padding: 8,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#ccc',
+                    }}
+                  >
+                    <Text style={{ fontFamily: 'Roboto-Medium' }}>
+                      {tooltipPos.value} {metricUnit}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#666' }}>
+                      {formatFullDate(tooltipPos.date)}
+                    </Text>
+                  </View>
+                );
+              }
+              return null;
+            }}
+          />
+        </View>
+
+        {/* Tabelka */}
+        <View style={styles.dataContainer}>
+          <Text style={styles.dataTitle}>Szczegóły danych:</Text>
+          {data.map((item, idx) => (
+            <View style={styles.dataRow} key={idx}>
+              <Text style={styles.dataDate}>{formatFullDate(item.date)}</Text>
+              <Text style={styles.dataValue}>
+                {item.value} {metricUnit}
+              </Text>
+            </View>
+          ))}
+        </View>
       </>
     );
   };
 
+  // ======================================
+  // RENDER "OGÓLNE" (BarChart)
+  // ======================================
+  const renderGeneralSection = () => {
+    if (!selectedYear) {
+      return (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateTitle}>Wybierz rok</Text>
+          <Text style={styles.emptyStateText}>
+            Brak danych do wyświetlenia. Wybierz rok, który Cię interesuje.
+          </Text>
+        </View>
+      );
+    }
+    const monthlyCounts = getGeneralYearData(selectedYear); // 12 elementów
+    const numericLabels = getMonthLabelsAsNumbers(); // ["01","02","03",...,"12"]
+    // Sprawdzamy, czy istnieje jakaś liczba > 0
+    const anyData = monthlyCounts.some((val) => val > 0);
+    if (!anyData) {
+      return (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateTitle}>
+            Brak treningów w {selectedYear} roku.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <>
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>
+            Liczba treningów w {selectedYear}
+          </Text>
+
+          <BarChart
+            data={{
+              labels: numericLabels,         // skrócone etykiety "01","02",...,"12"
+              datasets: [{ data: monthlyCounts }],
+            }}
+            width={chartWidth}
+            height={chartHeight}
+            fromZero
+            showBarTops
+            withInnerLines
+            yAxisSuffix=" tr."
+            chartConfig={{
+              backgroundColor: '#ffffff',
+              backgroundGradientFrom: '#ffffff',
+              backgroundGradientTo: '#ffffff',
+              color: (opacity = 1) => `rgba(13, 110, 253, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(102,102,102,${opacity})`,
+              barPercentage: 0.5,
+            }}
+            style={{ borderRadius: 12, marginVertical: 8 }}
+          />
+        </View>
+
+        {/* Szczegóły danych – pełne nazwy miesięcy */}
+        <View style={styles.dataContainer}>
+          <Text style={styles.dataTitle}>Szczegóły danych:</Text>
+          {monthNames.map((monthLabel, idx) => {
+            const count = monthlyCounts[idx];
+            return (
+              <View style={styles.dataRow} key={idx}>
+                <Text style={styles.dataDate}>{monthLabel}</Text>
+                <Text style={styles.dataValue}>{count} treningów</Text>
+              </View>
+            );
+          })}
+        </View>
+      </>
+    );
+  };
+
+  // Render ekranu
   return (
     <ImageBackground
       source={{
@@ -385,77 +614,148 @@ export default function AnalysisScreen() {
       style={styles.background}
     >
       <LinearGradient
-        colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.85)', 'rgba(255,255,255,0.95)']}
+        colors={[
+          'rgba(255,255,255,0.95)',
+          'rgba(255,255,255,0.85)',
+          'rgba(255,255,255,0.95)',
+        ]}
         style={styles.container}
       >
         <ScrollView style={styles.scrollView}>
+          {/* HEADER */}
           <View style={styles.header}>
             <Text style={styles.title}>Analiza</Text>
           </View>
 
           {/* Taby */}
           <View style={styles.tabs}>
+            {/* 1) OGÓLNE */}
+            <TouchableOpacity
+              style={[styles.tab, analysisType === 'general' && styles.activeTab]}
+              onPress={() => setAnalysisType('general')}
+            >
+              <CalendarIcon
+                size={20}
+                color={
+                  analysisType === 'general'
+                    ? colors.goals.primary
+                    : colors.text.secondary
+                }
+                strokeWidth={2}
+              />
+              <Text
+                style={[styles.tabText, analysisType === 'general' && styles.activeTabText]}
+              >
+                Ogólne
+              </Text>
+            </TouchableOpacity>
+
+            {/* 2) POMIARY */}
             <TouchableOpacity
               style={[styles.tab, analysisType === 'measurements' && styles.activeTab]}
               onPress={() => setAnalysisType('measurements')}
             >
               <Scale
                 size={20}
-                color={analysisType === 'measurements' ? colors.measurements.primary : colors.text.secondary}
+                color={
+                  analysisType === 'measurements'
+                    ? colors.measurements.primary
+                    : colors.text.secondary
+                }
                 strokeWidth={2}
               />
-              <Text style={[styles.tabText, analysisType === 'measurements' && styles.activeTabText]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  analysisType === 'measurements' && styles.activeTabText,
+                ]}
+              >
                 Pomiary
               </Text>
             </TouchableOpacity>
+
+            {/* 3) ĆWICZENIA */}
             <TouchableOpacity
               style={[styles.tab, analysisType === 'exercises' && styles.activeTab]}
               onPress={() => setAnalysisType('exercises')}
             >
               <Dumbbell
                 size={20}
-                color={analysisType === 'exercises' ? colors.training.primary : colors.text.secondary}
+                color={
+                  analysisType === 'exercises'
+                    ? colors.training.primary
+                    : colors.text.secondary
+                }
                 strokeWidth={2}
               />
-              <Text style={[styles.tabText, analysisType === 'exercises' && styles.activeTabText]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  analysisType === 'exercises' && styles.activeTabText,
+                ]}
+              >
                 Ćwiczenia
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Wybor dat */}
-          <TouchableOpacity
-            style={styles.dateSelector}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Calendar size={20} color="#666" strokeWidth={2} />
-            <Text style={styles.dateSelectorText}>
-              {startDate && endDate
-                ? `${formatFullDate(startDate)} - ${formatFullDate(endDate)}`
-                : 'Wybierz zakres dat'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Wybór pomiaru (modal) */}
-          {analysisType === 'measurements' && (
+          {/* 
+            W sekcji "Ogólne" -> dropdown wyboru ROKU 
+          */}
+          {analysisType === 'general' && (
             <TouchableOpacity
               style={styles.dropdownSelector}
-              onPress={() => setShowMeasurementModal(true)}
+              onPress={() => setShowYearModal(true)}
             >
               <Text style={styles.dropdownSelectorText}>
-                {measurementLabels[selectedMeasurement]}
+                {selectedYear ? `Rok: ${selectedYear}` : 'Wybierz rok'}
               </Text>
               <ChevronDown size={20} color="#666" />
             </TouchableOpacity>
           )}
 
-          {/* Wybór ćwiczenia i metryki (modal) */}
+          {/**
+           * W POMIARACH I ĆWICZENIACH -> KALENDARZ
+           */}
+          {analysisType !== 'general' && (
+            <TouchableOpacity
+              style={styles.dateSelector}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <CalendarIcon size={20} color="#666" strokeWidth={2} />
+              <Text style={styles.dateSelectorText}>
+                {startDate && endDate
+                  ? `${formatFullDate(startDate)} - ${formatFullDate(endDate)}`
+                  : 'Wybierz zakres dat'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* 
+            Render odpowiednich sekcji 
+          */}
+          {analysisType === 'general' && renderGeneralSection()}
+
+          {analysisType === 'measurements' && (
+            <>
+              <TouchableOpacity
+                style={styles.dropdownSelector}
+                onPress={() => setShowMeasurementModal(true)}
+              >
+                <Text style={styles.dropdownSelectorText}>
+                  {measurementLabels[selectedMeasurement]}
+                </Text>
+                <ChevronDown size={20} color="#666" />
+              </TouchableOpacity>
+              {renderMeasurementSection()}
+            </>
+          )}
+
           {analysisType === 'exercises' && (
             <>
               <TouchableOpacity
                 style={styles.dropdownSelector}
                 onPress={() => {
-                  // Reset wyszukiwania przy otwarciu
                   setSearchExerciseQuery('');
                   setShowExerciseModal(true);
                 }}
@@ -475,16 +775,43 @@ export default function AnalysisScreen() {
                 </Text>
                 <ChevronDown size={20} color="#666" />
               </TouchableOpacity>
+
+              {renderExerciseSection()}
             </>
           )}
-
-          {/* Render sekcji w zależności od wybranej zakładki */}
-          {analysisType === 'measurements'
-            ? renderMeasurementSection()
-            : renderExerciseSection()}
         </ScrollView>
 
-        {/* Modal - Kalendarz */}
+        {/* ================== MODALE ================== */}
+        {/* Modal - Wybór roku (tylko dla "Ogólne") */}
+        <Modal visible={showYearModal} transparent={false} animationType="slide">
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Wybierz rok</Text>
+
+            <ScrollView style={styles.modalContent}>
+              {availableYears.map((year) => (
+                <TouchableOpacity
+                  key={year}
+                  style={styles.modalOption}
+                  onPress={() => {
+                    setSelectedYear(year);
+                    setShowYearModal(false);
+                  }}
+                >
+                  <Text style={styles.modalOptionText}>{year}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.closeModalButton, { width: '100%' }]}
+              onPress={() => setShowYearModal(false)}
+            >
+              <Text style={styles.closeModalButtonText}>Zamknij</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+
+        {/* Modal - Kalendarz (tylko measurements / exercises) */}
         <Modal visible={showDatePicker} transparent={false} animationType="slide">
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Wybierz zakres dat</Text>
@@ -515,10 +842,12 @@ export default function AnalysisScreen() {
               selectedDayColor="#0d6efd"
               selectedDayTextColor="#fff"
               todayBackgroundColor="#f0f0f0"
-              textStyle={{ fontFamily: 'Roboto-Regular', color: '#000' }}
+              textStyle={{
+                fontFamily: 'Roboto-Regular',
+                color: '#000',
+              }}
             />
 
-            {/* Jedyny przycisk - szerokość 100% */}
             <TouchableOpacity
               style={[styles.closeModalButton, { width: '100%' }]}
               onPress={() => setShowDatePicker(false)}
@@ -528,8 +857,12 @@ export default function AnalysisScreen() {
           </View>
         </Modal>
 
-        {/* Modal - Wybór pomiaru - full screen */}
-        <Modal visible={showMeasurementModal} transparent={false} animationType="slide">
+        {/* Modal - Wybór pomiaru */}
+        <Modal
+          visible={showMeasurementModal}
+          transparent={false}
+          animationType="slide"
+        >
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Wybierz pomiar</Text>
 
@@ -558,11 +891,14 @@ export default function AnalysisScreen() {
         </Modal>
 
         {/* Modal - Wybór ćwiczenia (z wyszukiwarką) */}
-        <Modal visible={showExerciseModal} transparent={false} animationType="slide">
+        <Modal
+          visible={showExerciseModal}
+          transparent={false}
+          animationType="slide"
+        >
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Wybierz ćwiczenie</Text>
 
-            {/* Pole wyszukiwania */}
             <TextInput
               style={styles.searchInput}
               placeholder="Szukaj ćwiczenia..."
@@ -596,7 +932,11 @@ export default function AnalysisScreen() {
         </Modal>
 
         {/* Modal - Wybór metryki (ciężar, reps itd.) */}
-        <Modal visible={showExerciseMetricModal} transparent={false} animationType="slide">
+        <Modal
+          visible={showExerciseMetricModal}
+          transparent={false}
+          animationType="slide"
+        >
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Wybierz metrykę</Text>
 
@@ -630,6 +970,9 @@ export default function AnalysisScreen() {
   );
 }
 
+// =========================
+// STYLE
+// =========================
 const styles = StyleSheet.create({
   background: {
     flex: 1,
@@ -769,7 +1112,6 @@ const styles = StyleSheet.create({
     color: '#333',
   },
 
-  // Style do modali
   modalContainer: {
     flex: 1,
     backgroundColor: '#fff',
@@ -806,8 +1148,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto-Medium',
     color: '#333',
   },
-
-  // Pole do wyszukiwania w modalu ćwiczeń
   searchInput: {
     width: '100%',
     height: 48,

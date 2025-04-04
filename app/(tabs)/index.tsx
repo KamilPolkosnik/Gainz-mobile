@@ -1,8 +1,15 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ImageBackground } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ImageBackground,
+} from 'react-native';
 import { useAuthStore } from '@/stores/auth';
 import { router } from 'expo-router';
-import { Settings, Dumbbell, Scale, Target } from 'lucide-react-native';
+import { Settings, Dumbbell, Scale, Target, Plus } from 'lucide-react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { SummaryCard } from '@/components/SummaryCard';
 import { Modal } from '@/components/Modal';
@@ -19,15 +26,36 @@ export default function HomeScreen() {
   const [showWorkoutForm, setShowWorkoutForm] = useState(false);
   const [showMeasurementForm, setShowMeasurementForm] = useState(false);
   const [showGoalForm, setShowGoalForm] = useState(false);
+
   const user = useAuthStore((state) => state.user);
+
+  // Dane z poszczególnych store'ów
   const { workouts, addWorkout } = useWorkoutStore();
   const { measurements, addMeasurement } = useMeasurementStore();
   const { goals, addGoal } = useGoalStore();
 
+  // Ostatnie wpisy
   const latestWorkout = workouts[0];
   const latestMeasurement = measurements[0];
   const latestGoal = goals[0];
 
+  // ===============================
+  // Funkcja do formatowania dat
+  // ===============================
+  const formatDateFancy = (dateString: string) => {
+    const date = new Date(dateString);
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: 'long',    // np. 'poniedziałek'
+      day: 'numeric',     // np. 2
+      month: 'long',      // np. 'kwietnia'
+      year: 'numeric',    // np. 2025
+      hour: '2-digit',    // np. 12
+      minute: '2-digit',  // np. 34
+    };
+    return date.toLocaleString('pl-PL', options);
+  };
+
+  // Funkcje obsługi
   const handleAddWorkout = (data: { date: string; exercises: any[] }) => {
     addWorkout(data);
     setShowWorkoutForm(false);
@@ -43,6 +71,7 @@ export default function HomeScreen() {
     setShowGoalForm(false);
   };
 
+  // Tabela do wyświetlenia pomiarów w sekcji „Ostatni pomiar”
   const measurementRows = [
     { label: 'Waga', value: latestMeasurement?.weight, unit: 'kg' },
     { label: 'Barki', value: latestMeasurement?.shoulders, unit: 'cm' },
@@ -55,21 +84,11 @@ export default function HomeScreen() {
     { label: 'Łydka', value: latestMeasurement?.calf, unit: 'cm' },
   ];
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    };
-    return date.toLocaleDateString('pl-PL', options);
-  };
-
   return (
     <ImageBackground
-      source={{ uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop' }}
+      source={{
+        uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=2070&auto=format&fit=crop',
+      }}
       style={styles.background}
     >
       <LinearGradient
@@ -77,11 +96,14 @@ export default function HomeScreen() {
         style={styles.container}
       >
         <ScrollView style={styles.scrollView}>
+          {/* HEADER */}
           <View style={styles.header}>
             <View style={styles.welcomeContainer}>
-              <Text style={styles.welcome}>Witaj, {user?.name || 'użytkowniku'}!</Text>
+              <Text style={styles.welcome}>
+                Witaj, {user?.name || 'użytkowniku'}!
+              </Text>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.settingsButton}
               onPress={() => router.push('/settings')}
             >
@@ -89,6 +111,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* PRZYCISKI AKCJI */}
           <View style={styles.actionButtons}>
             <ActionButton
               icon={Dumbbell}
@@ -110,39 +133,59 @@ export default function HomeScreen() {
             />
           </View>
 
+          {/* KARTY PODSUMOWAŃ */}
           <View style={styles.summaries}>
+            {/* OSTATNI TRENING */}
             <SummaryCard
               title="Ostatni trening"
-              emptyMessage="Dodaj swój pierwszy trening"
               onAdd={() => setShowWorkoutForm(true)}
               onPress={() => router.push('/(tabs)/training')}
               type="training"
             >
-              {latestWorkout && (
-                <View style={styles.summaryContent}>
+              {latestWorkout ? (
+                <View style={[styles.summaryContent, styles.trainingBackground]}>
                   <Text style={styles.summaryDate}>
-                    {new Date(latestWorkout.date).toLocaleDateString('pl-PL')}
+                    {formatDateFancy(latestWorkout.date)}
                   </Text>
-                  <Text style={styles.summaryDetails}>
-                    {latestWorkout.exercises.length} ćwiczeń
-                  </Text>
+
+                  <View style={styles.exerciseList}>
+                    {latestWorkout.exercises.map((exercise: any, exIndex: number) => (
+                      <Text
+                        key={`${exercise.id || exIndex}`}
+                        style={styles.exerciseName}
+                      >
+                        • {exercise.name}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                // Pusty stan treningu
+                <View style={[styles.emptyContainer, styles.trainingBackground]}>
+                  <Text style={styles.emptyMessageBold}>Dodaj trening</Text>
+                  <TouchableOpacity
+                    style={styles.plusButton}
+                    onPress={() => setShowWorkoutForm(true)}
+                  >
+                    <Plus size={24} color="#666" />
+                  </TouchableOpacity>
                 </View>
               )}
             </SummaryCard>
 
+            {/* OSTATNI POMIAR */}
             <SummaryCard
               title="Ostatni pomiar"
-              emptyMessage="Dodaj swój pierwszy pomiar"
               onAdd={() => setShowMeasurementForm(true)}
               onPress={() => router.push('/(tabs)/measurements')}
               type="measurements"
             >
-              {latestMeasurement && (
-                <View style={styles.summaryContent}>
+              {latestMeasurement ? (
+                <View style={[styles.summaryContent, styles.measurementsBackground]}>
                   <Text style={styles.summaryDate}>
-                    {new Date(latestMeasurement.date).toLocaleDateString('pl-PL')}
+                    {formatDateFancy(latestMeasurement.date)}
                   </Text>
-                  
+
                   <View style={styles.measurementGrid}>
                     {measurementRows.map((row) => (
                       <View key={row.label} style={styles.measurementGridItem}>
@@ -154,40 +197,46 @@ export default function HomeScreen() {
                     ))}
                   </View>
                 </View>
+              ) : (
+                // Pusty stan pomiaru
+                <View style={[styles.emptyContainer, styles.measurementsBackground]}>
+                  <Text style={styles.emptyMessageBold}>Dodaj pomiar</Text>
+                  <TouchableOpacity
+                    style={styles.plusButton}
+                    onPress={() => setShowMeasurementForm(true)}
+                  >
+                    <Plus size={24} color="#666" />
+                  </TouchableOpacity>
+                </View>
               )}
             </SummaryCard>
 
+            {/* OSTATNI CEL */}
             <SummaryCard
               title="Ostatni cel"
-              emptyMessage="Dodaj swój pierwszy cel"
               onAdd={() => setShowGoalForm(true)}
               onPress={() => router.push('/(tabs)/goals')}
               type="goals"
             >
-              {latestGoal && (
-                <View style={styles.summaryContent}>
-                  <Text style={styles.goalTitle}>{latestGoal.title}</Text>
-                  
-                  <View style={styles.goalDetails}>
-                    <View style={styles.goalValue}>
-                      <Text style={styles.goalValueText}>
-                        Aktualnie: {latestGoal.currentValue} {latestGoal.unit}
-                      </Text>
-                      <Text style={styles.goalValueText}>
-                        Cel: {latestGoal.targetValue} {latestGoal.unit}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.goalDeadline}>
-                      Do {new Date(latestGoal.deadline).toLocaleDateString('pl-PL')}
-                    </Text>
-                  </View>
+              {latestGoal && !latestGoal.completed ? (
+                <GoalSection latestGoal={latestGoal} />
+              ) : (
+                // Pusty stan celu
+                <View style={[styles.emptyContainer, styles.goalsBackground]}>
+                  <Text style={styles.emptyMessageBold}>Dodaj cel</Text>
+                  <TouchableOpacity
+                    style={styles.plusButton}
+                    onPress={() => setShowGoalForm(true)}
+                  >
+                    <Plus size={24} color="#666" />
+                  </TouchableOpacity>
                 </View>
               )}
             </SummaryCard>
           </View>
         </ScrollView>
 
+        {/* MODALE */}
         <Modal visible={showWorkoutForm} onClose={() => setShowWorkoutForm(false)}>
           <WorkoutForm
             onClose={() => setShowWorkoutForm(false)}
@@ -213,6 +262,70 @@ export default function HomeScreen() {
   );
 }
 
+// ------------------------------
+// SEKCJA CELU – Wyodrębniona
+// ------------------------------
+function GoalSection({ latestGoal }: { latestGoal: any }) {
+  // Obliczamy, ile dni zostało do terminu realizacji
+  const now = new Date();
+  const deadlineDate = new Date(latestGoal.deadline);
+  const timeDiff = deadlineDate.getTime() - now.getTime();
+  const daysLeft = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+  // Formatowanie daty
+  const formatDateFancy = (dateString: string) => {
+    const date = new Date(dateString);
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    };
+    return date.toLocaleString('pl-PL', options);
+  };
+
+  return (
+    <View style={[styles.summaryContent, styles.goalsBackground]}>
+      <Text style={styles.goalTitle}>{latestGoal.title}</Text>
+
+      <View style={styles.goalDetails}>
+        <View style={styles.goalValue}>
+          <Text style={styles.goalValueText}>
+            Aktualnie: {latestGoal.currentValue} {latestGoal.unit}
+          </Text>
+          <Text style={styles.goalValueText}>
+            Cel: {latestGoal.targetValue} {latestGoal.unit}
+          </Text>
+        </View>
+        <Text style={styles.goalDeadline}>Termin realizacji:</Text>
+        <Text style={styles.goalDeadlineTime}>
+          {formatDateFancy(latestGoal.deadline)}
+        </Text>
+
+        {/* Wyświetlamy liczbę dni pozostałych do celu.
+            Jeśli zostało <= 10 dni, tekst będzie czerwony */}
+        <Text
+          style={[
+            styles.goalDaysLeft,
+            daysLeft <= 10 && styles.goalDaysLeftDanger, // <--- tu warunkowe łączenie stylu
+          ]}
+        >
+          {daysLeft > 0
+            ? `Pozostało dni: ${daysLeft}`
+            : daysLeft === 0
+            ? 'To ostatni dzień na osiągnięcie celu!'
+            : `Termin minął ${Math.abs(daysLeft)} dni temu`}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// ------------------------------
+// STYLE
+// ------------------------------
 const styles = StyleSheet.create({
   background: {
     flex: 1,
@@ -259,16 +372,50 @@ const styles = StyleSheet.create({
   },
   summaryContent: {
     padding: 16,
+    borderRadius: 12,
+  },
+  trainingBackground: {
+    backgroundColor: colors.training.light,
+  },
+  measurementsBackground: {
+    backgroundColor: colors.measurements.light,
+  },
+  goalsBackground: {
+    backgroundColor: colors.goals.light,
   },
   summaryDate: {
     fontSize: 16,
     fontFamily: 'Roboto-Medium',
     marginBottom: 16,
   },
-  summaryDetails: {
+  exerciseList: {
+    gap: 8,
+  },
+  exerciseName: {
     fontSize: 14,
     fontFamily: 'Roboto-Regular',
+    color: colors.text.primary,
+  },
+  emptyContainer: {
+    minHeight: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+  },
+  emptyMessageBold: {
+    fontFamily: 'Roboto-Bold',
+    fontSize: 16,
     color: colors.text.secondary,
+    marginBottom: 12,
+  },
+  plusButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   measurementGrid: {
     flexDirection: 'row',
@@ -316,5 +463,24 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: colors.common.border,
+  },
+  goalDeadlineTime: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Regular',
+    color: colors.text.secondary,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.common.border,
+    fontWeight: 'bold',
+  },
+  goalDaysLeft: {
+    marginTop: 8,
+    fontSize: 14,
+    fontFamily: 'Roboto-Bold',
+    color: colors.text.primary,
+  },
+  // Styl dla tekstu, jeśli zostało <= 10 dni
+  goalDaysLeftDanger: {
+    color: 'red',
   },
 });

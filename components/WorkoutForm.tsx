@@ -6,14 +6,37 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Platform,
 } from 'react-native';
 import CalendarPicker from 'react-native-calendar-picker';
-import { X, Plus, Trash2, ChevronDown, Search, Calendar } from 'lucide-react-native';
-import { Exercise, ExerciseSet, SavedExercise } from '@/types/workout';
-import { useWorkoutStore } from '@/stores/workouts';
-import { Modal } from './Modal';
+import {
+  X,
+  Plus,
+  Trash2,
+  ChevronDown,
+  Search,
+  Calendar,
+} from 'lucide-react-native';
 import { colors } from '@/constants/colors';
+
+// Rozszerzony typ: teraz każda seria (set) ma
+// osobny stan tekstowy (np. repsInput) do wpisywania danych.
+export interface ExerciseSet {
+  id: string;
+  reps: number;
+  weight: number;
+  distance: number;
+  time: number;
+  repsInput: string;     // Tekst wpisywany przez usera
+  weightInput: string;   // Tekst wpisywany przez usera
+  distanceInput: string; // Tekst wpisywany przez usera
+  timeInput: string;     // Tekst wpisywany przez usera
+}
+
+export interface Exercise {
+  id: string;
+  name: string;
+  sets: ExerciseSet[];
+}
 
 interface WorkoutFormProps {
   onClose: () => void;
@@ -24,30 +47,77 @@ interface WorkoutFormProps {
   };
 }
 
+/**
+ * Komponent formularza dodawania / edycji treningu.
+ */
 export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps) {
   const [date, setDate] = useState<Date>(
     initialData ? new Date(initialData.date) : new Date()
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [exercises, setExercises] = useState<Exercise[]>(
-    initialData?.exercises || []
-  );
   const [showExerciseSearch, setShowExerciseSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedExerciseIndex, setSelectedExerciseIndex] = useState<number>(-1);
-  
-  const { getSavedExercises } = useWorkoutStore();
+
+  // Inicjalizujemy ćwiczenia, dbając o to, żeby każda seria
+  // miała zarówno pola liczbowe, jak i tekstowe.
+  const [exercises, setExercises] = useState<Exercise[]>(
+    (initialData?.exercises || []).map((ex) => ({
+      ...ex,
+      sets: ex.sets.map((s) => ({
+        ...s,
+        repsInput: s.reps ? String(s.reps).replace('.', ',') : '',
+        weightInput: s.weight ? String(s.weight).replace('.', ',') : '',
+        distanceInput: s.distance ? String(s.distance).replace('.', ',') : '',
+        timeInput: s.time ? String(s.time / 60).replace('.', ',') : '',
+      })),
+    }))
+  );
+
+  // ========================================
+  // Poniższa funkcja symuluje pobieranie zapisanych ćwiczeń
+  // z jakiegoś store'a. Zamień ją na własne gettery.
+  // ========================================
+  const getSavedExercises = (query: string) => {
+    // Tutaj zastępczo zwracamy "sample".
+    // W Twojej aplikacji pewnie pobierasz to ze store.
+    const sampleExercises = [
+      {
+        id: '1',
+        name: 'Przysiad ze sztangą',
+        lastUsed: new Date().toISOString(),
+        lastSets: [
+          {
+            id: 'set1',
+            reps: 10,
+            weight: 40,
+            distance: 0,
+            time: 0,
+            repsInput: '10',
+            weightInput: '40',
+            distanceInput: '',
+            timeInput: '',
+          },
+        ],
+      },
+    ];
+    return sampleExercises.filter((ex) =>
+      ex.name.toLowerCase().includes(query.toLowerCase())
+    );
+  };
+
   const savedExercises = getSavedExercises(searchQuery);
 
-  const formatDate = (date: Date) => {
+  // Formatowanie daty do wyświetlania
+  const formatDate = (currentDate: Date) => {
     try {
-      const options: Intl.DateTimeFormatOptions = { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      const options: Intl.DateTimeFormatOptions = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
       };
-      return date.toLocaleDateString('pl-PL', options);
+      return currentDate.toLocaleDateString('pl-PL', options);
     } catch (error) {
       console.error('Error formatting date:', error);
       return 'Invalid date';
@@ -61,9 +131,12 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
     }
   };
 
+  /**
+   * Dodanie nowego ćwiczenia z pustą serią.
+   */
   const addExercise = () => {
-    setExercises([
-      ...exercises,
+    setExercises((prev) => [
+      ...prev,
       {
         id: Math.random().toString(36).substring(7),
         name: '',
@@ -73,77 +146,195 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
             reps: 0,
             weight: 0,
             distance: 0,
-            time: 0
+            time: 0,
+            repsInput: '',
+            weightInput: '',
+            distanceInput: '',
+            timeInput: '',
           },
         ],
       },
     ]);
   };
 
-  const updateExercise = (index: number, exercise: Partial<Exercise>) => {
-    const newExercises = [...exercises];
-    newExercises[index] = { ...newExercises[index], ...exercise };
-    setExercises(newExercises);
+  const removeExercise = (index: number) => {
+    setExercises((prev) => {
+      const copy = [...prev];
+      copy.splice(index, 1);
+      return copy;
+    });
+  };
+
+  /**
+   * Aktualizacja nazwy ćwiczenia.
+   */
+  const updateExerciseName = (exerciseIndex: number, newName: string) => {
+    setExercises((prev) => {
+      const copy = [...prev];
+      copy[exerciseIndex].name = newName;
+      return copy;
+    });
   };
 
   const addSet = (exerciseIndex: number) => {
-    const newExercises = [...exercises];
-    newExercises[exerciseIndex].sets.push({
-      id: Math.random().toString(36).substring(7),
-      reps: 0,
-      weight: 0,
-      distance: 0,
-      time: 0
+    setExercises((prev) => {
+      const copy = [...prev];
+      copy[exerciseIndex].sets.push({
+        id: Math.random().toString(36).substring(7),
+        reps: 0,
+        weight: 0,
+        distance: 0,
+        time: 0,
+        repsInput: '',
+        weightInput: '',
+        distanceInput: '',
+        timeInput: '',
+      });
+      return copy;
     });
-    setExercises(newExercises);
-  };
-
-  const updateSet = (
-    exerciseIndex: number,
-    setIndex: number,
-    set: Partial<ExerciseSet>
-  ) => {
-    const newExercises = [...exercises];
-    if (set.time !== undefined) {
-      // Convert minutes to seconds when saving
-      set.time = set.time * 60;
-    }
-    newExercises[exerciseIndex].sets[setIndex] = {
-      ...newExercises[exerciseIndex].sets[setIndex],
-      ...set,
-    };
-    setExercises(newExercises);
-  };
-
-  const getTimeInMinutes = (seconds: number) => {
-    return (seconds / 60).toString();
   };
 
   const removeSet = (exerciseIndex: number, setIndex: number) => {
-    const newExercises = [...exercises];
-    newExercises[exerciseIndex].sets.splice(setIndex, 1);
-    setExercises(newExercises);
+    setExercises((prev) => {
+      const copy = [...prev];
+      copy[exerciseIndex].sets.splice(setIndex, 1);
+      return copy;
+    });
   };
 
-  const removeExercise = (index: number) => {
-    const newExercises = [...exercises];
-    newExercises.splice(index, 1);
-    setExercises(newExercises);
+  /**
+   * Podczas wpisywania w TextInput przechowujemy dane w polu ...Input
+   * żeby user mógł zobaczyć wszystko, łącznie z przecinkiem czy kropką.
+   */
+  const handleSetInputChange = (
+    exerciseIndex: number,
+    setIndex: number,
+    field: keyof ExerciseSet, // np. 'repsInput', 'weightInput'
+    value: string
+  ) => {
+    setExercises((prev) => {
+      const copy = [...prev];
+      // Zmieniamy tylko ...Input, nie naruszamy repów jako liczby.
+      (copy[exerciseIndex].sets[setIndex] as any)[field] = value;
+      return copy;
+    });
   };
 
+  /**
+   * Na blur parsujemy tekst do liczby i zapisujemy w polu `reps`/`weight`/`distance`/`time`.
+   */
+  const handleSetInputBlur = (
+    exerciseIndex: number,
+    setIndex: number,
+    field: keyof ExerciseSet // np. 'reps' | 'weight' | 'distance' | 'time'
+  ) => {
+    setExercises((prev) => {
+      const copy = [...prev];
+
+      // Ustalamy, który klucz Input jest powiązany z docelowym field
+      // np. jeśli field to 'reps', to klucz input to 'repsInput'.
+      let inputField: keyof ExerciseSet;
+      switch (field) {
+        case 'reps':
+          inputField = 'repsInput';
+          break;
+        case 'weight':
+          inputField = 'weightInput';
+          break;
+        case 'distance':
+          inputField = 'distanceInput';
+          break;
+        case 'time':
+          inputField = 'timeInput';
+          break;
+        default:
+          inputField = 'repsInput';
+      }
+
+      const textValue = copy[exerciseIndex].sets[setIndex][inputField] as string;
+      // Zamieniamy przecinek na kropkę, parseFloat (jeśli się nie uda, = 0)
+      let numValue = parseFloat(textValue.replace(',', '.'));
+      if (isNaN(numValue)) {
+        numValue = 0;
+      }
+
+      // Jeśli to time, zamieniamy minuty na sekundy
+      if (field === 'time') {
+        copy[exerciseIndex].sets[setIndex][field] = numValue * 60;
+      } else {
+        copy[exerciseIndex].sets[setIndex][field] = numValue;
+      }
+
+      return copy;
+    });
+  };
+
+  /**
+   * Na potrzeby wyświetlania czasu (w minutach) w polu input
+   */
+  const getTimeInMinutes = (seconds: number) => {
+    if (!seconds) return '';
+    const minutes = seconds / 60;
+    // zamieniamy kropkę na przecinek, by user widział np. "2,5"
+    return String(minutes).replace('.', ',');
+  };
+
+  /**
+   * Finalne przetworzenie i walidacja przed zapisem.
+   * Gdy user kliknie "Zapisz", ponownie parsujemy (na wszelki wypadek).
+   */
   const handleSubmit = () => {
-    if (exercises.some(exercise => !exercise.name)) {
+    // Sprawdzamy, czy wszystkie ćwiczenia mają nazwę
+    if (exercises.some((exercise) => !exercise.name.trim())) {
       alert('Wszystkie ćwiczenia muszą mieć nazwę');
       return;
     }
+
+    // Jeszcze raz parse wszystkiego w razie, gdyby user nie wywołał blur
+    const finalExercises = exercises.map((exercise) => {
+      const parsedSets = exercise.sets.map((set) => {
+        // reps
+        let reps = parseFloat(set.repsInput.replace(',', '.'));
+        if (isNaN(reps)) reps = 0;
+
+        // weight
+        let weight = parseFloat(set.weightInput.replace(',', '.'));
+        if (isNaN(weight)) weight = 0;
+
+        // distance
+        let distance = parseFloat(set.distanceInput.replace(',', '.'));
+        if (isNaN(distance)) distance = 0;
+
+        // time
+        let time = parseFloat(set.timeInput.replace(',', '.'));
+        if (isNaN(time)) time = 0;
+        // Zamiana minut -> sekundy
+        time = time * 60;
+
+        return {
+          ...set,
+          reps,
+          weight,
+          distance,
+          time,
+        };
+      });
+
+      return {
+        ...exercise,
+        sets: parsedSets,
+      };
+    });
+
     onSubmit({
       date: date.toISOString(),
-      exercises,
+      exercises: finalExercises,
     });
   };
 
   return (
     <View style={styles.container}>
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.title}>
           {initialData ? 'Edytuj trening' : 'Nowy trening'}
@@ -153,20 +344,21 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
         </TouchableOpacity>
       </View>
 
+      {/* TREŚĆ */}
       <ScrollView style={styles.content}>
+        {/* DATA */}
         <TouchableOpacity
           style={styles.dateButton}
           onPress={() => setShowDatePicker(true)}
         >
           <View style={styles.dateButtonContent}>
             <Calendar size={20} color="#0d6efd" />
-            <Text style={styles.dateButtonText}>
-              {formatDate(date)}
-            </Text>
+            <Text style={styles.dateButtonText}>{formatDate(date)}</Text>
             <ChevronDown size={20} color="#0d6efd" />
           </View>
         </TouchableOpacity>
 
+        {/* LISTA ĆWICZEŃ */}
         <View style={styles.exercises}>
           {exercises.map((exercise, exerciseIndex) => (
             <View key={exercise.id} style={styles.exercise}>
@@ -176,7 +368,7 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
                     style={styles.exerciseNameInput}
                     placeholder="Nazwa ćwiczenia"
                     value={exercise.name}
-                    onChangeText={(text) => updateExercise(exerciseIndex, { name: text })}
+                    onChangeText={(text) => updateExerciseName(exerciseIndex, text)}
                   />
                   <View style={styles.exerciseActions}>
                     <TouchableOpacity
@@ -198,70 +390,89 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
                 </View>
               </View>
 
+              {/* SERIE */}
               {exercise.sets.map((set, setIndex) => (
                 <View key={set.id} style={styles.set}>
                   <Text style={styles.setNumber}>Seria {setIndex + 1}</Text>
                   <View style={styles.setInputsContainer}>
                     <View style={styles.setInputsRow}>
+                      {/* POWTÓRZENIA */}
                       <View style={styles.inputWrapper}>
                         <Text style={styles.inputLabel}>Powt.</Text>
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          keyboardType="numeric"
-                          value={set.reps?.toString() || ''}
+                          // 'decimal-pad' pozwala na wprowadzenie przecinka/kropki na iOS;
+                          // w Androidzie może się pojawić kropka, zależy od ustawień językowych.
+                          keyboardType="decimal-pad"
+                          value={set.repsInput}
+                          // Tylko aktualizujemy tekst w stanie, bez parsowania
                           onChangeText={(text) =>
-                            updateSet(exerciseIndex, setIndex, {
-                              reps: parseInt(text) || 0,
-                            })
+                            handleSetInputChange(exerciseIndex, setIndex, 'repsInput', text)
                           }
+                          // Dopiero w onBlur parsujemy i zapisujemy w `reps`
+                          onBlur={() => handleSetInputBlur(exerciseIndex, setIndex, 'reps')}
                         />
                       </View>
+                      {/* KG */}
                       <View style={styles.inputWrapper}>
                         <Text style={styles.inputLabel}>Kg</Text>
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          keyboardType="numeric"
-                          value={set.weight?.toString() || ''}
+                          keyboardType="decimal-pad"
+                          value={set.weightInput}
                           onChangeText={(text) =>
-                            updateSet(exerciseIndex, setIndex, {
-                              weight: parseFloat(text) || 0,
-                            })
+                            handleSetInputChange(
+                              exerciseIndex,
+                              setIndex,
+                              'weightInput',
+                              text
+                            )
                           }
+                          onBlur={() => handleSetInputBlur(exerciseIndex, setIndex, 'weight')}
                         />
                       </View>
                     </View>
+
                     <View style={styles.setInputsRow}>
+                      {/* DYSTANS */}
                       <View style={styles.inputWrapper}>
                         <Text style={styles.inputLabel}>Dystans (m)</Text>
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          keyboardType="numeric"
-                          value={set.distance?.toString() || ''}
+                          keyboardType="decimal-pad"
+                          value={set.distanceInput}
                           onChangeText={(text) =>
-                            updateSet(exerciseIndex, setIndex, {
-                              distance: parseFloat(text) || 0,
-                            })
+                            handleSetInputChange(
+                              exerciseIndex,
+                              setIndex,
+                              'distanceInput',
+                              text
+                            )
+                          }
+                          onBlur={() =>
+                            handleSetInputBlur(exerciseIndex, setIndex, 'distance')
                           }
                         />
                       </View>
+                      {/* CZAS (MIN) */}
                       <View style={styles.inputWrapper}>
                         <Text style={styles.inputLabel}>Czas (min)</Text>
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          keyboardType="numeric"
-                          value={set.time ? getTimeInMinutes(set.time) : ''}
+                          keyboardType="decimal-pad"
+                          value={set.timeInput}
                           onChangeText={(text) =>
-                            updateSet(exerciseIndex, setIndex, {
-                              time: parseFloat(text) || 0,
-                            })
+                            handleSetInputChange(exerciseIndex, setIndex, 'timeInput', text)
                           }
+                          onBlur={() => handleSetInputBlur(exerciseIndex, setIndex, 'time')}
                         />
                       </View>
                     </View>
+
                     <TouchableOpacity
                       onPress={() => removeSet(exerciseIndex, setIndex)}
                       style={styles.removeSetButton}
@@ -272,6 +483,7 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
                 </View>
               ))}
 
+              {/* DODAJ SERIĘ */}
               <TouchableOpacity
                 style={styles.addSetButton}
                 onPress={() => addSet(exerciseIndex)}
@@ -283,12 +495,14 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
           ))}
         </View>
 
+        {/* DODAJ ĆWICZENIE */}
         <TouchableOpacity style={styles.addExerciseButton} onPress={addExercise}>
           <Plus size={24} color="#fff" />
           <Text style={styles.addExerciseText}>Dodaj ćwiczenie</Text>
         </TouchableOpacity>
       </ScrollView>
 
+      {/* OVERLAY WYSZUKIWANIA ZAPISANYCH ĆWICZEŃ */}
       {showExerciseSearch && (
         <View style={styles.searchOverlay}>
           <View style={styles.searchHeader}>
@@ -319,9 +533,15 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
                 style={styles.searchResult}
                 onPress={() => {
                   if (selectedExerciseIndex >= 0) {
-                    updateExercise(selectedExerciseIndex, {
-                      name: exercise.name,
-                      sets: exercise.lastSets,
+                    // Jeżeli użytkownik wybiera ćwiczenie z historii,
+                    // możesz też chcieć wypełnić sety podobnie jak w initState.
+                    // Tu tylko pokazuję prosty przykład:
+                    setExercises((prev) => {
+                      const copy = [...prev];
+                      copy[selectedExerciseIndex].name = exercise.name;
+                      // Jeżeli chcesz od razu wstawić sety:
+                      // copy[selectedExerciseIndex].sets = exercise.lastSets;
+                      return copy;
                     });
                     setShowExerciseSearch(false);
                     setSearchQuery('');
@@ -339,8 +559,10 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
                 style={[styles.searchResult, styles.searchResultNew]}
                 onPress={() => {
                   if (selectedExerciseIndex >= 0) {
-                    updateExercise(selectedExerciseIndex, {
-                      name: searchQuery,
+                    setExercises((prev) => {
+                      const copy = [...prev];
+                      copy[selectedExerciseIndex].name = searchQuery;
+                      return copy;
                     });
                     setShowExerciseSearch(false);
                     setSearchQuery('');
@@ -356,6 +578,7 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
         </View>
       )}
 
+      {/* STOPKA Z PRZYCISKIEM 'ZAPISZ' */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
           <Text style={styles.submitButtonText}>
@@ -363,15 +586,29 @@ export function WorkoutForm({ onClose, onSubmit, initialData }: WorkoutFormProps
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* MODAL WYBORU DATY */}
+      {showDatePicker && (
+        <View style={StyleSheet.absoluteFill}>
+          <View style={styles.datePickerContainer}>
+            <CalendarPicker
+              onDateChange={(newDate) => handleDateChange(newDate?.toDate())}
+            />
+            <TouchableOpacity
+              style={styles.closeDatePicker}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <Text style={styles.closeDatePickerText}>Zamknij</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
+  container: { flex: 1, backgroundColor: '#fff' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -476,9 +713,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
-  inputWrapper: {
-    flex: 1,
-  },
+  inputWrapper: { flex: 1 },
   inputLabel: {
     fontSize: 12,
     fontFamily: 'Roboto-Medium',
@@ -590,24 +825,18 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-  calendarContainer: {
+  datePickerContainer: {
+    flex: 1,
+    justifyContent: 'center',
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 12,
   },
-  calendarTitle: {
-    fontSize: 20,
-    fontFamily: 'Roboto-Bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  calendarCloseButton: {
+  closeDatePicker: {
     backgroundColor: '#0d6efd',
     padding: 16,
     borderRadius: 12,
-    marginTop: 20,
+    margin: 20,
   },
-  calendarCloseButtonText: {
+  closeDatePickerText: {
     color: '#fff',
     fontSize: 16,
     fontFamily: 'Roboto-Medium',

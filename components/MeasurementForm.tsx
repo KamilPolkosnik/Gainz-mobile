@@ -57,6 +57,8 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
     initialData ? new Date(initialData.date) : new Date()
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // Trzymamy wartości w formie stringów, aby użytkownik mógł wprowadzić np. kropkę/przecinek.
   const [measurements, setMeasurements] = useState({
     weight: initialData?.weight?.toString() || '',
     shoulders: initialData?.shoulders?.toString() || '',
@@ -68,15 +70,16 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
     thigh: initialData?.thigh?.toString() || '',
     calf: initialData?.calf?.toString() || '',
   });
+
   const [photos, setPhotos] = useState(initialData?.photos || {});
 
   const formatDate = (date: Date) => {
     try {
-      const options: Intl.DateTimeFormatOptions = { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      const options: Intl.DateTimeFormatOptions = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
       };
       return date.toLocaleDateString('pl-PL', options);
     } catch (error) {
@@ -92,6 +95,27 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
     }
   };
 
+  /**
+   * Funkcja wywoływana przy wpisywaniu w TextInput.
+   * 1. Zastępujemy przecinek kropką (value.replace(',', '.')).
+   * 2. Ograniczamy długość do 6 znaków.
+   * 3. Zapisujemy nową wartość w stanie.
+   */
+  const handleMeasurementChange = (key: keyof typeof measurements, value: string) => {
+    // Zamiana przecinka na kropkę
+    value = value.replace(',', '.');
+
+    // Ograniczenie długości do 6 znaków
+    if (value.length > 6) {
+      value = value.slice(0, 6);
+    }
+
+    setMeasurements((prev) => ({ ...prev, [key]: value }));
+  };
+
+  /**
+   * Parsujemy stringi na liczby i wywołujemy onSubmit.
+   */
   const handleSubmit = () => {
     onSubmit({
       date: date.toISOString(),
@@ -114,21 +138,23 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
     unit: string = 'cm'
   ) => (
     <View style={styles.inputContainer}>
-      <Text style={styles.label}>{label} ({unit})</Text>
+      <Text style={styles.label}>
+        {label} ({unit})
+      </Text>
       <TextInput
         style={styles.input}
         value={measurements[key]}
-        onChangeText={(value) =>
-          setMeasurements((prev) => ({ ...prev, [key]: value }))
-        }
+        onChangeText={(value) => handleMeasurementChange(key, value)}
         keyboardType="numeric"
         placeholder="0"
+        maxLength={6} // dodatkowe zabezpieczenie z poziomu TextInput
       />
     </View>
   );
 
   return (
     <View style={styles.container}>
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.title}>
           {initialData ? 'Edytuj pomiary' : 'Nowe pomiary'}
@@ -138,6 +164,7 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
         </TouchableOpacity>
       </View>
 
+      {/* CONTENT */}
       <ScrollView style={styles.content}>
         <TouchableOpacity
           style={styles.dateButton}
@@ -145,9 +172,7 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
         >
           <View style={styles.dateButtonContent}>
             <Calendar size={20} color="#0d6efd" />
-            <Text style={styles.dateButtonText}>
-              {formatDate(date)}
-            </Text>
+            <Text style={styles.dateButtonText}>{formatDate(date)}</Text>
           </View>
         </TouchableOpacity>
 
@@ -170,22 +195,23 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
             <PhotoPicker
               label="Przód"
               value={photos.front}
-              onChange={(uri) => setPhotos(prev => ({ ...prev, front: uri }))}
+              onChange={(uri) => setPhotos((prev) => ({ ...prev, front: uri }))}
             />
             <PhotoPicker
               label="Bok"
               value={photos.side}
-              onChange={(uri) => setPhotos(prev => ({ ...prev, side: uri }))}
+              onChange={(uri) => setPhotos((prev) => ({ ...prev, side: uri }))}
             />
             <PhotoPicker
               label="Tył"
               value={photos.back}
-              onChange={(uri) => setPhotos(prev => ({ ...prev, back: uri }))}
+              onChange={(uri) => setPhotos((prev) => ({ ...prev, back: uri }))}
             />
           </View>
         </View>
       </ScrollView>
 
+      {/* DATEPICKER */}
       <Modal visible={showDatePicker} onClose={() => setShowDatePicker(false)}>
         <View style={styles.calendarContainer}>
           <Text style={styles.calendarTitle}>Wybierz datę</Text>
@@ -221,6 +247,7 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
         </View>
       </Modal>
 
+      {/* FOOTER */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
           <Text style={styles.submitButtonText}>
@@ -232,6 +259,7 @@ export function MeasurementForm({ onClose, onSubmit, initialData }: MeasurementF
   );
 }
 
+// STYLE
 const styles = StyleSheet.create({
   container: {
     flex: 1,

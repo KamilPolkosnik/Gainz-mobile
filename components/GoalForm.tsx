@@ -34,8 +34,12 @@ interface GoalFormProps {
 export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
   const [title, setTitle] = useState(initialData?.title || '');
   const [description, setDescription] = useState(initialData?.description || '');
-  const [currentValue, setCurrentValue] = useState(initialData?.currentValue?.toString() || '0');
-  const [targetValue, setTargetValue] = useState(initialData?.targetValue?.toString() || '');
+  const [currentValue, setCurrentValue] = useState(
+    initialData?.currentValue?.toString() || '0'
+  );
+  const [targetValue, setTargetValue] = useState(
+    initialData?.targetValue?.toString() || ''
+  );
   const [unit, setUnit] = useState(initialData?.unit || '');
   const [deadline, setDeadline] = useState<Date>(
     initialData ? new Date(initialData.deadline) : new Date()
@@ -44,11 +48,11 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
 
   const formatDate = (date: Date) => {
     try {
-      const options: Intl.DateTimeFormatOptions = { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      const options: Intl.DateTimeFormatOptions = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
       };
       return date.toLocaleDateString('pl-PL', options);
     } catch (error) {
@@ -64,8 +68,27 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
     }
   };
 
+  /**
+   * Zamiana przecinka na kropkę w polu "Obecna wartość".
+   */
+  const handleCurrentValueChange = (text: string) => {
+    // Zamieniamy przecinki na kropki
+    const withDots = text.replace(',', '.');
+    setCurrentValue(withDots);
+  };
+
+  /**
+   * Zamiana przecinka na kropkę w polu "Cel".
+   */
+  const handleTargetValueChange = (text: string) => {
+    const withDots = text.replace(',', '.');
+    setTargetValue(withDots);
+  };
+
   const handleSubmit = () => {
-    if (!title || !targetValue) {
+    // Sprawdzamy czy pola wymagane nie są puste
+    // Wymagane: tytuł, cel, obecna wartość
+    if (!title.trim() || !currentValue.trim() || !targetValue.trim()) {
       alert('Wypełnij wszystkie wymagane pola');
       return;
     }
@@ -73,8 +96,9 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
     onSubmit({
       title,
       description,
+      // parseFloat zamienia string (np. "2.5") na liczbę.
       currentValue: parseFloat(currentValue) || 0,
-      targetValue: parseFloat(targetValue),
+      targetValue: parseFloat(targetValue) || 0,
       unit: unit || '',
       deadline: deadline.toISOString(),
     });
@@ -82,6 +106,7 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
 
   return (
     <View style={styles.container}>
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.title}>
           {initialData ? 'Edytuj cel' : 'Nowy cel'}
@@ -91,6 +116,7 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
         </TouchableOpacity>
       </View>
 
+      {/* TREŚĆ */}
       <ScrollView style={styles.content}>
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Nazwa celu *</Text>
@@ -115,23 +141,25 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
         </View>
 
         <View style={styles.row}>
+          {/* OBECNA WARTOŚĆ */}
           <View style={[styles.inputContainer, { flex: 1 }]}>
-            <Text style={styles.label}>Obecna wartość</Text>
+            <Text style={styles.label}>Obecna wartość *</Text>
             <TextInput
               style={styles.input}
               value={currentValue}
-              onChangeText={setCurrentValue}
+              onChangeText={handleCurrentValueChange}
               keyboardType="numeric"
               placeholder="0"
             />
           </View>
 
+          {/* CEL */}
           <View style={[styles.inputContainer, { flex: 1 }]}>
             <Text style={styles.label}>Cel *</Text>
             <TextInput
               style={styles.input}
               value={targetValue}
-              onChangeText={setTargetValue}
+              onChangeText={handleTargetValueChange}
               keyboardType="numeric"
               placeholder="np. 100"
             />
@@ -156,14 +184,13 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
           >
             <View style={styles.dateButtonContent}>
               <Calendar size={20} color="#0d6efd" />
-              <Text style={styles.dateButtonText}>
-                {formatDate(deadline)}
-              </Text>
+              <Text style={styles.dateButtonText}>{formatDate(deadline)}</Text>
             </View>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
+      {/* DATEPICKER */}
       <Modal visible={showDatePicker} onClose={() => setShowDatePicker(false)}>
         <View style={styles.calendarContainer}>
           <Text style={styles.calendarTitle}>Wybierz datę</Text>
@@ -199,6 +226,7 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
         </View>
       </Modal>
 
+      {/* STOPKA */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
           <Text style={styles.submitButtonText}>
@@ -210,6 +238,7 @@ export function GoalForm({ onClose, onSubmit, initialData }: GoalFormProps) {
   );
 }
 
+// STYLE
 const styles = StyleSheet.create({
   container: {
     flex: 1,
